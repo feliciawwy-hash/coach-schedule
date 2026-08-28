@@ -109,12 +109,36 @@
         }
         
         .manage-coach-panel li {
+            display: block;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+            color: #333;
+        }
+        
+        .coach-row-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid #eee;
-            color: #333;
+            margin-bottom: 6px;
+        }
+        
+        .coach-name {
+            font-weight: 600;
+        }
+        
+        .coach-hours {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.82rem;
+            color: #666;
+        }
+        
+        .coach-hours input[type="time"] {
+            padding: 4px 6px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 0.82rem;
         }
         
         .del-coach {
@@ -401,6 +425,7 @@
             margin-top: 15px;
             text-align: center;
             display: none;
+            white-space: pre-line;
         }
         
         .status-message.success {
@@ -475,7 +500,7 @@
                 <input type="text" id="newCoachName" placeholder="输入教练名，如 Tom">
                 <button id="addCoachBtn">添加</button>
             </div>
-            <p class="hint">提示：新增 / 删除仅保存在当前浏览器，换设备需重新设置（接入后端后自动同步）。</p>
+            <p class="hint">提示：设置保存在服务器（Cloudflare），换设备也同步。每位教练可设「开放时段」，范围外显示 OFF。</p>
         </div>
         
         <div class="main-card">
@@ -531,57 +556,42 @@
     </div>
 
     <script>
-        // 配置
-        const DEFAULT_COACHES = {
-            che: { name: 'Che', sheetId: '6wqv7g', baseRow: 3 },
-            roby: { name: 'Roby', sheetId: 'roby_sheet', baseRow: 4 },
-            judy: { name: 'Judy', sheetId: 'judy_sheet', baseRow: 3 },
-            elizabeth: { name: 'Elizabeth', sheetId: 'elizabeth_sheet', baseRow: 4 }
-        };
+        // ===== 配置 =====
+        // 👇 部署 Cloudflare Worker 后，把下面地址改成你的 Worker 地址（形如 https://xxx.workers.dev）
+        const API_BASE = 'https://coach-schedule-api.feliciawwy.workers.dev';
 
-        let COACHES = loadCoaches();
-
-        function loadCoaches() {
-            try {
-                const saved = localStorage.getItem('coachScheduleCoaches');
-                if (saved) return JSON.parse(saved);
-            } catch (e) {}
-            return JSON.parse(JSON.stringify(DEFAULT_COACHES));
-        }
-
-        function saveCoaches() {
-            localStorage.setItem('coachScheduleCoaches', JSON.stringify(COACHES));
-        }
-        
         const TIME_SLOTS = [
             '8:00', '8:30', '9:00', '9:30', '10:00', '10:30', '11:00', '11:30',
             '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
             '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
             '20:00', '20:30', '21:00', '21:30', '22:00', '22:30'
         ];
-        
+
         // 状态
-        let currentCoach = 'che';
+        let coaches = [];            // [{id,name,openStart,openEnd,sheetId,baseRow}]
+        let currentCoachId = null;
         let currentWeekStart = getWeekStart(new Date());
-        let selectedSlots = [];
-        let scheduleData = {};
-        
-        // 初始化
+        let selectedSlots = [];      // [{coachId, date(iso), dateLabel, time}]
+        let availability = null;      // {coach, days:[{date,iso,slots:{time:status}}]}
+
         document.addEventListener('DOMContentLoaded', () => {
             initDateInput();
-            renderCoachTabs();
             initManageCoach();
-            loadSchedule();
             initForm();
+            loadCoaches();
         });
-        
+
         function getWeekStart(date) {
             const d = new Date(date);
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
             return new Date(d.setDate(diff));
         }
-        
+
+        function iso(d) {
+            return d.toISOString().slice(0, 10);
+        }
+
         function initDateInput() {
             const input = document.getElementById('dateInput');
             input.valueAsDate = currentWeekStart;
@@ -590,21 +600,35 @@
                 loadSchedule();
             });
         }
-        
+
+        async function loadCoaches() {
+            try {
+                const res = await fetch(API_BASE + '/api/coaches');
+                if (!res.ok) throw new Error();
+                coaches = await res.json();
+            } catch (e) {
+                showStatus('⚠️ 无法连接预约服务，请检查 Worker 地址配置（index.html 顶部 API_BASE）', 'error');
+                return;
+            }
+            if (!coaches.length) return;
+            if (!coaches.find(c => c.id === currentCoachId)) currentCoachId = coaches[0].id;
+            renderCoachTabs();
+            renderCoachList();
+            loadSchedule();
+        }
+
         function renderCoachTabs() {
             const tabs = document.getElementById('coachTabs');
             tabs.innerHTML = '';
-            const keys = Object.keys(COACHES);
-            if (!COACHES[currentCoach]) currentCoach = keys[0];
-            keys.forEach(key => {
+            coaches.forEach(c => {
                 const btn = document.createElement('button');
-                btn.className = 'coach-tab' + (key === currentCoach ? ' active' : '');
-                btn.textContent = COACHES[key].name;
-                btn.dataset.coach = key;
+                btn.className = 'coach-tab' + (c.id === currentCoachId ? ' active' : '');
+                btn.textContent = c.name;
+                btn.dataset.coach = c.id;
                 btn.addEventListener('click', () => {
                     document.querySelectorAll('.coach-tab').forEach(t => t.classList.remove('active'));
                     btn.classList.add('active');
-                    currentCoach = key;
+                    currentCoachId = c.id;
                     selectedSlots = [];
                     updateSelectedSlotsDisplay();
                     loadSchedule();
@@ -616,29 +640,62 @@
         function renderCoachList() {
             const ul = document.getElementById('coachList');
             ul.innerHTML = '';
-            Object.keys(COACHES).forEach(key => {
+            coaches.forEach(c => {
+                if (!c.openStart) c.openStart = '08:00';
+                if (!c.openEnd) c.openEnd = '22:30';
+
                 const li = document.createElement('li');
-                const span = document.createElement('span');
-                span.textContent = COACHES[key].name;
-                li.appendChild(span);
+
+                const top = document.createElement('div');
+                top.className = 'coach-row-top';
+                const name = document.createElement('span');
+                name.className = 'coach-name';
+                name.textContent = c.name;
                 const del = document.createElement('button');
                 del.className = 'del-coach';
                 del.textContent = '删除';
-                del.addEventListener('click', () => {
-                    if (Object.keys(COACHES).length <= 1) {
-                        alert('至少保留一位教练');
-                        return;
-                    }
-                    delete COACHES[key];
-                    saveCoaches();
-                    if (currentCoach === key) currentCoach = Object.keys(COACHES)[0];
-                    renderCoachTabs();
-                    renderCoachList();
-                    loadSchedule();
+                del.addEventListener('click', async () => {
+                    if (coaches.length <= 1) { alert('至少保留一位教练'); return; }
+                    if (!confirm(`确定删除教练「${c.name}」？`)) return;
+                    await fetch(API_BASE + '/api/coaches/' + c.id, { method: 'DELETE' });
+                    if (currentCoachId === c.id) currentCoachId = null;
+                    await loadCoaches();
                 });
-                li.appendChild(del);
+                top.appendChild(name);
+                top.appendChild(del);
+
+                const hours = document.createElement('div');
+                hours.className = 'coach-hours';
+                const lbl = document.createElement('label');
+                lbl.textContent = '开放';
+                const start = document.createElement('input');
+                start.type = 'time';
+                start.value = c.openStart;
+                const sep = document.createElement('span');
+                sep.textContent = '~';
+                const end = document.createElement('input');
+                end.type = 'time';
+                end.value = c.openEnd;
+                start.addEventListener('change', () => saveCoach(c.id, { openStart: start.value }));
+                end.addEventListener('change', () => saveCoach(c.id, { openEnd: end.value }));
+                hours.appendChild(lbl);
+                hours.appendChild(start);
+                hours.appendChild(sep);
+                hours.appendChild(end);
+
+                li.appendChild(top);
+                li.appendChild(hours);
                 ul.appendChild(li);
             });
+        }
+
+        async function saveCoach(id, patch) {
+            await fetch(API_BASE + '/api/coaches/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch)
+            });
+            await loadCoaches();
         }
 
         function initManageCoach() {
@@ -647,244 +704,168 @@
                 panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
                 if (panel.style.display === 'block') renderCoachList();
             });
-            document.getElementById('addCoachBtn').addEventListener('click', () => {
+            document.getElementById('addCoachBtn').addEventListener('click', async () => {
                 const input = document.getElementById('newCoachName');
                 const name = input.value.trim();
                 if (!name) return;
-                const key = 'c' + Date.now();
-                COACHES[key] = { name: name, sheetId: '', baseRow: 3 };
-                saveCoaches();
+                await fetch(API_BASE + '/api/coaches', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
                 input.value = '';
-                renderCoachTabs();
-                renderCoachList();
+                await loadCoaches();
             });
             document.getElementById('newCoachName').addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') document.getElementById('addCoachBtn').click();
             });
         }
-        
-        function getWeekDates() {
-            const dates = [];
-            for (let i = 0; i < 7; i++) {
-                const date = new Date(currentWeekStart);
-                date.setDate(date.getDate() + i);
-                dates.push(date);
-            }
-            return dates;
-        }
-        
-        function formatDate(date) {
-            return `${date.getMonth() + 1}/${date.getDate()}`;
-        }
-        
+
         function getDayName(index) {
-            const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-            return days[index];
+            return ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][index];
         }
-        
-        // 模拟加载数据（实际部署后替换为真实API）
+
         async function loadSchedule() {
             const grid = document.getElementById('scheduleGrid');
+            if (!currentCoachId) { grid.innerHTML = ''; return; }
             grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px;"><div class="loading-spinner"></div> 加载中...</div>';
-            
-            // 模拟API延迟
-            await new Promise(r => setTimeout(r, 500));
-            
-            // 模拟数据生成（实际应从云函数获取）
-            generateMockData();
-            renderSchedule();
+            try {
+                const res = await fetch(`${API_BASE}/api/availability?coach=${currentCoachId}&week=${iso(currentWeekStart)}`);
+                if (!res.ok) throw new Error();
+                availability = await res.json();
+                renderSchedule();
+            } catch (e) {
+                showStatus('⚠️ 加载可约时间失败，请稍后重试', 'error');
+                grid.innerHTML = '';
+            }
         }
-        
-        function generateMockData() {
-            // 模拟：随机一些OFF和已预约
-            scheduleData = {};
-            const dates = getWeekDates();
-            
-            dates.forEach((date, dateIndex) => {
-                const dateKey = formatDate(date);
-                scheduleData[dateKey] = {};
-                
-                TIME_SLOTS.forEach(time => {
-                    const rand = Math.random();
-                    if (rand < 0.15) {
-                        scheduleData[dateKey][time] = 'off';
-                    } else if (rand < 0.3) {
-                        scheduleData[dateKey][time] = 'booked';
-                    } else {
-                        scheduleData[dateKey][time] = 'available';
-                    }
-                });
-            });
-        }
-        
+
         function renderSchedule() {
             const grid = document.getElementById('scheduleGrid');
-            const dates = getWeekDates();
-            
-            let html = '<div></div>'; // 左上角空白
-            
-            // 日期表头
-            dates.forEach((date, index) => {
-                const dateStr = formatDate(date);
-                const dayName = getDayName(index);
-                const isToday = new Date().toDateString() === date.toDateString();
+            if (!availability || !availability.days || !availability.days.length) {
+                grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:#999;">暂无数据</div>';
+                return;
+            }
+            const days = availability.days;
+            let html = '<div></div>';
+
+            days.forEach((d, index) => {
+                const isToday = new Date().toDateString() === new Date(d.iso + 'T00:00:00').toDateString();
                 html += `
                     <div class="date-header" style="${isToday ? 'background: #667eea; color: white;' : ''}">
-                        ${dateStr}
-                        <div class="day-name">${dayName}${isToday ? ' (今天)' : ''}</div>
+                        ${d.date}
+                        <div class="day-name">${getDayName(index)}${isToday ? ' (今天)' : ''}</div>
                     </div>
                 `;
             });
-            
-            // 时间行
+
             TIME_SLOTS.forEach(time => {
                 html += `<div class="time-label">${time}</div>`;
-                
-                dates.forEach(date => {
-                    const dateKey = formatDate(date);
-                    const status = scheduleData[dateKey]?.[time] || 'available';
-                    const isSelected = selectedSlots.some(s => 
-                        s.date === dateKey && s.time === time
-                    );
-                    
+                days.forEach(d => {
+                    const status = d.slots[time] || 'off';
+                    const isSelected = selectedSlots.some(s => s.date === d.iso && s.time === time);
                     const slotClass = isSelected ? 'selected' : status;
-                    const displayText = status === 'booked' ? '已预约' : 
-                                       status === 'off' ? 'OFF' : '可预约';
-                    
+                    const displayText = status === 'booked' ? '已预约' : status === 'off' ? 'OFF' : '可预约';
                     html += `
-                        <div class="slot ${slotClass}" 
-                             data-date="${dateKey}" 
-                             data-time="${time}"
-                             onclick="handleSlotClick('${dateKey}', '${time}', '${status}')">
+                        <div class="slot ${slotClass}"
+                             onclick="handleSlotClick('${d.iso}', '${time}', '${status}')">
                             ${displayText}
                         </div>
                     `;
                 });
             });
-            
+
             grid.innerHTML = html;
         }
-        
-        function handleSlotClick(date, time, status) {
-            if (status === 'off' || status === 'booked') {
-                return; // 不可选
-            }
-            
-            const existingIndex = selectedSlots.findIndex(s => 
-                s.date === date && s.time === time
-            );
-            
-            if (existingIndex >= 0) {
-                selectedSlots.splice(existingIndex, 1);
+
+        function handleSlotClick(dateIso, time, status) {
+            if (status === 'off' || status === 'booked') return;
+            const idx = selectedSlots.findIndex(s => s.date === dateIso && s.time === time);
+            if (idx >= 0) {
+                selectedSlots.splice(idx, 1);
             } else {
-                // 限制最多选4个时段
-                if (selectedSlots.length >= 4) {
-                    showStatus('最多只能选择4个连续时段', 'error');
-                    return;
-                }
-                selectedSlots.push({ date, time, coach: currentCoach });
+                if (selectedSlots.length >= 4) { showStatus('最多只能选择4个时段', 'error'); return; }
+                const day = availability.days.find(d => d.iso === dateIso);
+                selectedSlots.push({ coachId: currentCoachId, date: dateIso, dateLabel: day ? day.date : dateIso, time });
             }
-            
             updateSelectedSlotsDisplay();
             renderSchedule();
         }
-        
+
         function updateSelectedSlotsDisplay() {
             const container = document.getElementById('selectedSlots');
             const submitBtn = document.getElementById('submitBtn');
-            
             if (selectedSlots.length === 0) {
                 container.innerHTML = '<span style="color: #999; font-size: 0.9rem;">请在上方选择时段</span>';
                 submitBtn.disabled = true;
                 return;
             }
-            
-            // 按时间排序
-            selectedSlots.sort((a, b) => {
-                if (a.date !== b.date) return a.date.localeCompare(b.date);
-                return TIME_SLOTS.indexOf(a.time) - TIME_SLOTS.indexOf(b.time);
-            });
-            
-            container.innerHTML = selectedSlots.map((slot, index) => `
-                <div class="selected-slot-tag">
-                    ${COACHES[slot.coach].name} ${slot.date} ${slot.time}
-                    <span class="remove" onclick="removeSlot(${index})">×</span>
-                </div>
-            `).join('');
-            
+            selectedSlots.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+            container.innerHTML = selectedSlots.map((slot, index) => {
+                const c = coaches.find(x => x.id === slot.coachId);
+                const name = c ? c.name : '';
+                return `
+                    <div class="selected-slot-tag">
+                        ${name} ${slot.dateLabel} ${slot.time}
+                        <span class="remove" onclick="removeSlot(${index})">×</span>
+                    </div>
+                `;
+            }).join('');
             submitBtn.disabled = false;
         }
-        
+
         function removeSlot(index) {
             selectedSlots.splice(index, 1);
             updateSelectedSlotsDisplay();
             renderSchedule();
         }
-        
+
         function initForm() {
             document.getElementById('submitBtn').addEventListener('click', submitBooking);
         }
-        
+
         async function submitBooking() {
             const name = document.getElementById('nameInput').value.trim();
-            
-            if (!name) {
-                showStatus('请输入约课名', 'error');
-                return;
-            }
-            
-            if (selectedSlots.length === 0) {
-                showStatus('请至少选择一个时段', 'error');
-                return;
-            }
-            
+            if (!name) { showStatus('请输入约课名', 'error'); return; }
+            if (selectedSlots.length === 0) { showStatus('请至少选择一个时段', 'error'); return; }
+
             const submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
             showStatus('正在提交...', 'loading');
-            
-            // 构建预约数据
-            const bookingData = {
+
+            const payload = {
+                coachId: currentCoachId,
                 name,
-                coach: currentCoach,
-                slots: selectedSlots,
-                submitTime: new Date().toISOString()
+                slots: selectedSlots.map(s => ({ date: s.date, time: s.time }))
             };
-            
+
             try {
-                // 实际部署后调用云函数
-                // const result = await fetch('/api/book', {
-                //     method: 'POST',
-                //     headers: { 'Content-Type': 'application/json' },
-                //     body: JSON.stringify(bookingData)
-                // });
-                
-                // 模拟提交
-                await new Promise(r => setTimeout(r, 1500));
-                
-                showStatus(`预约申请已提交！\n${COACHES[currentCoach].name}教练会尽快确认您的预约。`, 'success');
-                
-                // 清空表单
+                const res = await fetch(API_BASE + '/api/book', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || '提交失败');
+                const c = coaches.find(x => x.id === currentCoachId);
+                showStatus(`✅ 预约申请已提交！\n${c ? c.name : ''}教练会尽快确认。\n（你微信上也会收到通知）`, 'success');
                 selectedSlots = [];
                 updateSelectedSlotsDisplay();
                 document.getElementById('nameInput').value = '';
-                renderSchedule();
-                
+                loadSchedule();
             } catch (error) {
-                showStatus('提交失败，请稍后重试', 'error');
+                showStatus('提交失败：' + (error.message || '请稍后重试'), 'error');
                 submitBtn.disabled = false;
             }
         }
-        
+
         function showStatus(message, type) {
             const statusEl = document.getElementById('statusMessage');
             statusEl.textContent = message;
             statusEl.className = `status-message ${type}`;
             statusEl.style.display = 'block';
-            
             if (type === 'success') {
-                setTimeout(() => {
-                    statusEl.style.display = 'none';
-                }, 5000);
+                setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
             }
         }
     </script>
