@@ -243,7 +243,9 @@
         
         .legend-box.available { background: #e8f5e9; border: 2px solid #4caf50; }
         .legend-box.off { background: #4a4a4a; border: 2px solid #4a4a4a; }
-        .legend-box.booked { background: #fff3e0; border: 2px solid #ff9800; }
+        .legend-box.booked, .legend-box.pending { background: #fff3e0; border: 2px solid #ff9800; }
+        .legend-box.confirmed { background: #d1fae5; border: 2px solid #10b981; }
+        .legend-box.cancelled { background: #f0f0f0; border: 2px solid #ccc; }
         .legend-box.selected { background: #667eea; border: 2px solid #667eea; }
         
         .schedule-grid {
@@ -310,10 +312,25 @@
             cursor: not-allowed;
         }
         
-        .slot.booked {
+        .slot.booked,
+        .slot.pending {
             background: #fff3e0;
             border: 2px solid #ff9800;
             color: #ef6c00;
+            cursor: not-allowed;
+        }
+
+        .slot.confirmed {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+            color: #065f46;
+            cursor: not-allowed;
+        }
+
+        .slot.cancelled {
+            background: #f0f0f0;
+            border: 2px solid #ccc;
+            color: #999;
             cursor: not-allowed;
         }
         
@@ -520,8 +537,12 @@
                     <span>OFF / 不可用</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-box booked"></div>
-                    <span>已被预约</span>
+                    <div class="legend-box pending"></div>
+                    <span>待确认</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-box confirmed"></div>
+                    <span>已确认</span>
                 </div>
                 <div class="legend-item">
                     <div class="legend-box selected"></div>
@@ -765,7 +786,7 @@
                     const status = d.slots[time] || 'off';
                     const isSelected = selectedSlots.some(s => s.date === d.iso && s.time === time);
                     const slotClass = isSelected ? 'selected' : status;
-                    const displayText = status === 'booked' ? '已预约' : status === 'off' ? 'OFF' : '可预约';
+                    const displayText = status === 'available' ? '可预约' : status === 'pending' ? '待确认' : status === 'confirmed' ? '已确认' : status === 'cancelled' ? '已取消' : 'OFF';
                     html += `
                         <div class="slot ${slotClass}"
                              onclick="handleSlotClick('${d.iso}', '${time}', '${status}')">
@@ -779,7 +800,7 @@
         }
 
         function handleSlotClick(dateIso, time, status) {
-            if (status === 'off' || status === 'booked') return;
+            if (status === 'off' || status === 'pending' || status === 'confirmed' || status === 'cancelled') return;
             const idx = selectedSlots.findIndex(s => s.date === dateIso && s.time === time);
             if (idx >= 0) {
                 selectedSlots.splice(idx, 1);

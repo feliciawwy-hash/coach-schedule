@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>管理后台 - 教练预约系统</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI',sans-serif; background:#f0f2f5; color:#333; min-height:100vh; }
+
+/* 登录 */
+#loginScreen { display:flex; align-items:center; justify-content:center; min-height:100vh; }
+.login-box { background:white; padding:40px; border-radius:16px; box-shadow:0 4px 24px rgba(0,0,0,.1); width:360px; text-align:center; }
+.login-box h2 { margin-bottom:24px; color:#667eea; }
+.login-box input { width:100%; padding:12px 16px; border:2px solid #e0e0e0; border-radius:10px; font-size:1rem; margin-bottom:16px; outline:none; transition:border .2s; }
+.login-box input:focus { border-color:#667eea; }
+.login-box button { width:100%; padding:12px; background:#667eea; color:white; border:none; border-radius:10px; font-size:1rem; cursor:pointer; }
+.login-box button:hover { background:#5a6fd6; }
+.login-error { color:#e53e3e; font-size:.85rem; margin-top:8px; display:none; }
+
+/* 后台主界面 */
+#adminApp { display:none; }
+.topbar { background:white; padding:0 24px; height:56px; display:flex; align-items:center; justify-content:space-between; box-shadow:0 1px 4px rgba(0,0,0,.08); position:sticky; top:0; z-index:100; }
+.topbar h1 { font-size:1.1rem; color:#667eea; }
+.topbar-right { display:flex; align-items:center; gap:12px; }
+.topbar-right span { font-size:.85rem; color:#666; }
+.logout-btn { padding:6px 16px; background:#f0f0f0; border:none; border-radius:8px; cursor:pointer; font-size:.85rem; }
+.logout-btn:hover { background:#e0e0e0; }
+
+/* 标签栏 */
+.tabs { display:flex; gap:4px; padding:16px 24px 0; background:white; }
+.tab { padding:10px 20px; border:none; background:transparent; border-bottom:3px solid transparent; cursor:pointer; font-size:.95rem; color:#666; border-radius:8px 8px 0 0; transition:all .2s; }
+.tab:hover { background:#f5f5f5; color:#333; }
+.tab.active { border-bottom-color:#667eea; color:#667eea; font-weight:600; }
+
+/* 内容区 */
+.content { padding:24px; max-width:1200px; margin:0 auto; }
+.section { display:none; }
+.section.active { display:block; }
+
+/* 统计卡片 */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:24px; }
+.stat-card { background:white; border-radius:12px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.stat-card .num { font-size:2rem; font-weight:700; color:#667eea; }
+.stat-card .label { font-size:.8rem; color:#888; margin-top:4px; }
+.stat-card.warning .num { color:#dd6b20; }
+.stat-card.success .num { color:#38a169; }
+.stat-card.danger .num { color:#e53e3e; }
+
+/* 日期切换 */
+.date-nav { display:flex; align-items:center; gap:12px; margin-bottom:20px; background:white; padding:12px 16px; border-radius:12px; }
+.date-nav button { padding:6px 12px; border:1px solid #ddd; background:white; border-radius:8px; cursor:pointer; }
+.date-nav button:hover { background:#f0f0f0; }
+.date-nav strong { flex:1; text-align:center; font-size:1rem; }
+.today-btn { padding:6px 16px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; margin-left:auto; }
+
+/* 教练预约卡片 */
+.coach-cards { display:flex; flex-direction:column; gap:16px; }
+.coach-booking-card { background:white; border-radius:12px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.coach-card-header { padding:12px 16px; background:#667eea; color:white; font-weight:600; display:flex; align-items:center; justify-content:space-between; }
+.coach-card-header .coach-name { font-size:1rem; }
+.coach-card-header .badge { background:rgba(255,255,255,.25); padding:2px 10px; border-radius:20px; font-size:.75rem; }
+
+/* 预约条目 */
+.booking-item { display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid #f0f0f0; gap:12px; }
+.booking-item:last-child { border-bottom:none; }
+.booking-item .time { font-weight:600; min-width:50px; color:#333; }
+.booking-item .student { flex:1; font-weight:500; }
+.booking-item .status-badge { padding:3px 10px; border-radius:20px; font-size:.75rem; font-weight:600; }
+.status-pending { background:#fef3c7; color:#92400e; }
+.status-confirmed { background:#d1fae5; color:#065f46; }
+.status-cancelled { background:#fee2e2; color:#991b1b; }
+.booking-actions { display:flex; gap:6px; }
+.booking-actions button { padding:4px 12px; border:none; border-radius:8px; cursor:pointer; font-size:.8rem; transition:opacity .2s; }
+.booking-actions button:hover { opacity:.8; }
+.confirm-btn { background:#10b981; color:white; }
+.cancel-btn { background:#ef4444; color:white; }
+
+/* 空状态 */
+.empty-state { text-align:center; padding:40px; color:#aaa; }
+
+/* 教练时间配置 */
+.coach-list { display:flex; flex-direction:column; gap:16px; }
+.coach-hours-card { background:white; border-radius:12px; padding:16px 20px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.coach-hours-card h3 { margin-bottom:12px; font-size:1rem; color:#333; }
+.hours-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:8px; }
+.hours-row { display:flex; align-items:center; gap:8px; font-size:.85rem; }
+.hours-row .day { min-width:48px; color:#666; font-weight:500; }
+.hours-row input { padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:.85rem; width:80px; }
+.hours-row input[type=time] { width:110px; }
+.hours-row .closed { color:#999; font-size:.8rem; }
+.hours-row label { display:flex; align-items:center; gap:4px; cursor:pointer; }
+.override-row { margin-top:8px; padding-top:8px; border-top:1px dashed #eee; }
+.override-list { margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; }
+.override-chip { background:#fef9c3; border:1px solid #fde047; padding:3px 10px; border-radius:20px; font-size:.75rem; display:flex; align-items:center; gap:6px; }
+.override-chip span { cursor:pointer; color:#d97706; font-weight:700; }
+.save-hours-btn { margin-top:12px; padding:8px 20px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; }
+.save-hours-btn:disabled { background:#ccc; cursor:not-allowed; }
+
+/* 临时调整 */
+.override-form { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
+.override-form input { padding:6px 10px; border:1px solid #ddd; border-radius:6px; font-size:.85rem; }
+.add-override-btn { padding:6px 14px; background:#f59e0b; color:white; border:none; border-radius:8px; cursor:pointer; font-size:.85rem; }
+
+/* 管理员设置 */
+.token-list { display:flex; flex-direction:column; gap:10px; margin-bottom:20px; }
+.token-item { background:white; padding:12px 16px; border-radius:10px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.token-item .name { font-weight:600; flex:1; }
+.token-item .token { font-family:monospace; color:#888; font-size:.8rem; }
+.token-item button { padding:4px 12px; background:#fee2e2; color:#c00; border:none; border-radius:6px; cursor:pointer; font-size:.8rem; }
+.add-token-form { background:white; padding:16px; border-radius:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.add-token-form input { padding:8px 12px; border:1px solid #ddd; border-radius:8px; flex:1; min-width:150px; }
+.add-token-form button { padding:8px 20px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; }
+
+/* 备份区 */
+.backup-section { background:white; padding:20px; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.backup-section h3 { margin-bottom:12px; }
+.backup-section p { color:#888; font-size:.85rem; margin-bottom:16px; }
+.backup-btn { padding:10px 24px; background:#059669; color:white; border:none; border-radius:10px; cursor:pointer; font-size:.95rem; }
+.backup-btn:disabled { background:#ccc; cursor:not-allowed; }
+.backup-log { margin-top:12px; font-size:.85rem; color:#666; max-height:100px; overflow-y:auto; background:#f9f9f9; padding:8px; border-radius:6px; font-family:monospace; }
+
+/* 加载动画 */
+.loading { display:inline-block; width:20px; height:20px; border:2px solid #667eea; border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to{transform:rotate(360deg)} }
+</style>
+</head>
+<body>
+
+<!-- 登录界面 -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h2>🔒 管理后台</h2>
+    <input type="password" id="pwInput" placeholder="输入管理密码" onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">登录</button>
+    <div class="login-error" id="loginError">密码错误</div>
+  </div>
+</div>
+
+<!-- 后台主界面 -->
+<div id="adminApp">
+  <div class="topbar">
+    <h1>⚙️ 教练预约管理后台</h1>
+    <div class="topbar-right">
+      <span id="loginName">管理员</span>
+      <button class="logout-btn" onclick="doLogout()">退出登录</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('dashboard')">📅 今日看板</button>
+    <button class="tab" onclick="switchTab('coaches')">🕐 开放时间</button>
+    <button class="tab" onclick="switchTab('settings')">🔔 通知设置</button>
+    <button class="tab" onclick="switchTab('backup')">💾 备份</button>
+  </div>
+
+  <div class="content">
+
+    <!-- 今日看板 -->
+    <div id="tab-dashboard" class="section active">
+      <div class="date-nav">
+        <button onclick="changeDate(-1)">← 前一天</button>
+        <strong id="currentDateLabel">加载中...</strong>
+        <button onclick="changeDate(1)">后一天 →</button>
+        <button class="today-btn" onclick="goToday()">今天</button>
+      </div>
+
+      <div class="stats" id="statsRow">
+        <div class="stat-card"><div class="num" id="statTotal">-</div><div class="label">总预约</div></div>
+        <div class="stat-card warning"><div class="num" id="statPending">-</div><div class="label">待确认</div></div>
+        <div class="stat-card success"><div class="num" id="statConfirmed">-</div><div class="label">已确认</div></div>
+        <div class="stat-card danger"><div class="num" id="statCancelled">-</div><div class="label">已取消</div></div>
+      </div>
+
+      <div class="coach-cards" id="coachCards">
+        <div class="empty-state"><div class="loading"></div> 加载中...</div>
+      </div>
+    </div>
+
+    <!-- 开放时间配置 -->
+    <div id="tab-coaches" class="section">
+      <div id="coachHoursList">
+        <div class="empty-state"><div class="loading"></div> 加载中...</div>
+      </div>
+    </div>
+
+    <!-- 通知设置 -->
+    <div id="tab-settings" class="section">
+      <h2 style="margin-bottom:16px; font-size:1rem; color:#666;">接收通知的管理员</h2>
+      <div class="token-list" id="tokenList">
+        <div class="empty-state"><div class="loading"></div> 加载中...</div>
+      </div>
+      <div class="add-token-form">
+        <input id="newTokenName" placeholder="管理员名称（如：小王）">
+        <input id="newTokenValue" placeholder="Server酱 SendKey（SCT 开头）">
+        <button onclick="addToken()">添加</button>
+      </div>
+    </div>
+
+    <!-- 备份 -->
+    <div id="tab-backup" class="section">
+      <div class="backup-section">
+        <h3>腾讯文档备份</h3>
+        <p>将当日所有预约数据一键备份到腾讯文档，每天会自动执行一次。</p>
+        <button class="backup-btn" id="backupBtn" onclick="runBackup()">📤 立即备份今日数据</button>
+        <div class="backup-log" id="backupLog"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = 'https://coach-schedule-api.feliciawwy.workers.dev';
+let adminToken = localStorage.getItem('admin_token') || '';
+let currentDate = new Date();
+let coachHoursData = [];  // 本地缓存教练时间配置（未保存时用）
+
+// ── 登录 ──────────────────────────────────────────────
+function doLogin() {
+  const pw = document.getElementById('pwInput').value;
+  if (!pw) return;
+  fetch(API+'/api/admin/login?pw='+encodeURIComponent(pw)).then(r=>r.json()).then(d=>{
+    if (d.ok) {
+      adminToken = pw;
+      localStorage.setItem('admin_token', pw);
+      showAdminApp();
+    } else {
+      document.getElementById('loginError').style.display='block';
+    }
+  }).catch(()=>{
+    document.getElementById('loginError').style.display='block';
+  });
+}
+function doLogout() {
+  adminToken = '';
+  localStorage.removeItem('admin_token');
+  document.getElementById('adminApp').style.display='none';
+  document.getElementById('loginScreen').style.display='flex';
+}
+function checkLogin() {
+  if (adminToken) { showAdminApp(); }
+}
+checkLogin();
+
+// ── 顶部导航 ──────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${name}')"]`).classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  if (name==='dashboard') loadDashboard();
+  if (name==='coaches') loadCoachHours();
+  if (name==='settings') loadTokens();
+}
+
+// ── 通用请求 ──────────────────────────────────────────
+function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type':'application/json', 'X-Admin-Password': adminToken }
+  };
+  if (body) opts.body = JSON.stringify(body);
+  return fetch(API+path, opts).then(r=>r.json());
+}
+
+// ── 今日看板 ──────────────────────────────────────────
+function fmtDate(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function updateDateLabel() {
+  const dow = ['周日','周一','周二','周三','周四','周五','周六'][currentDate.getDay()];
+  const label = fmtDate(currentDate);
+  document.getElementById('currentDateLabel').textContent = `${label} ${dow}`;
+}
+function changeDate(delta) {
+  currentDate.setDate(currentDate.getDate()+delta);
+  updateDateLabel();
+  loadDashboard();
+}
+function goToday() {
+  currentDate = new Date();
+  updateDateLabel();
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  updateDateLabel();
+  const date = fmtDate(currentDate);
+  const coaches = await api('GET', `/api/dashboard?date=${date}`);
+  if (coaches.error) { alert('加载失败：'+coaches.error); return; }
+
+  const allBookings = coaches.coaches.flatMap(c=>c.bookings);
+  const pending = allBookings.filter(b=>b.status==='pending');
+  const confirmed = allBookings.filter(b=>b.status==='confirmed');
+  const cancelled = allBookings.filter(b=>b.status==='cancelled');
+
+  document.getElementById('statTotal').textContent = allBookings.length;
+  document.getElementById('statPending').textContent = pending.length;
+  document.getElementById('statConfirmed').textContent = confirmed.length;
+  document.getElementById('statCancelled').textContent = cancelled.length;
+
+  let html = '';
+  for (const coach of coaches.coaches) {
+    const bks = coach.bookings;
+    html += `
+    <div class="coach-booking-card">
+      <div class="coach-card-header">
+        <span class="coach-name">${coach.name}</span>
+        <span class="badge">${bks.length} 条预约</span>
+      </div>`;
+    if (!bks.length) {
+      html += `<div class="empty-state" style="padding:20px;">当日无预约</div>`;
+    } else {
+      // 按时间排序
+      const sorted = [...bks].sort((a,b)=>a.time.localeCompare(b.time));
+      for (const bk of sorted) {
+        const statusLabel = bk.status==='pending'?'待确认':bk.status==='confirmed'?'已确认':'已取消';
+        const statusClass = bk.status==='pending'?'status-pending':bk.status==='confirmed'?'status-confirmed':'status-cancelled';
+        const actions = bk.status==='pending'?`
+          <button class="confirm-btn" onclick="confirmBooking('${bk.id}')">✓ 确认</button>
+          <button class="cancel-btn" onclick="cancelBooking('${bk.id}')">✕ 取消</button>`:'';
+        html += `
+        <div class="booking-item">
+          <span class="time">${bk.time}</span>
+          <span class="student">${bk.name}</span>
+          <span class="status-badge ${statusClass}">${statusLabel}</span>
+          <div class="booking-actions">${actions}</div>
+        </div>`;
+      }
+    }
+    html += `</div>`;
+  }
+  document.getElementById('coachCards').innerHTML = html || '<div class="empty-state">当日无任何教练数据</div>';
+}
+
+async function confirmBooking(id) {
+  await api('POST', '/api/book/confirm', {id});
+  loadDashboard();
+}
+async function cancelBooking(id) {
+  await api('POST', '/api/book/cancel', {id});
+  loadDashboard();
+}
+
+// ── 开放时间配置 ──────────────────────────────────────
+const DAY_NAMES = { '1':'周一','2':'周二','3':'周三','4':'周四','5':'周五','6':'周六','0':'周日' };
+
+async function loadCoachHours() {
+  const coaches = await api('GET', '/api/coaches');
+  if (coaches.error) return;
+  coachHoursData = coaches;
+  renderCoachHours(coaches);
+}
+
+function renderCoachHours(coaches) {
+  let html = '';
+  for (const c of coaches) {
+    const oh = c.openHours || {};
+    html += `<div class="coach-hours-card" id="chc-${c.id}">
+      <h3>${c.name}</h3>
+      <div class="hours-grid" id="hg-${c.id}">`;
+    for (const [dow, lbl] of Object.entries(DAY_NAMES)) {
+      const hours = oh[dow] || {start:'',end:''};
+      html += `
+      <div class="hours-row" id="hr-${c.id}-${dow}">
+        <span class="day">${lbl}</span>
+        <input type="time" value="${hours.start||''}" data-coach="${c.id}" data-dow="${dow}" data-field="start" onchange="onHoursChange(this)">
+        <span style="color:#999">~</span>
+        <input type="time" value="${hours.end||''}" data-coach="${c.id}" data-dow="${dow}" data-field="end" onchange="onHoursChange(this)">
+        <label><input type="checkbox" ${!hours.start?'checked':''} onchange="toggleOff(this,'${c.id}','${dow}')"> 休息</label>
+      </div>`;
+    }
+    html += `</div>
+      <div class="override-row">
+        <strong style="font-size:.85rem; color:#666;">临时调整</strong>
+        <div class="override-list" id="ovl-${c.id}">`;
+    if (c.overrides) {
+      for (const [date, val] of Object.entries(c.overrides)) {
+        if (val === null) html += `<div class="override-chip">${date} 全天关闭 <span onclick="removeOverride('${c.id}','${date}')">×</span></div>`;
+        else html += `<div class="override-chip">${date} ${val.start}~${val.end} <span onclick="removeOverride('${c.id}','${date}')">×</span></div>`;
+      }
+    }
+    html += `</div>
+        <div class="override-form">
+          <input type="date" id="od-${c.id}" placeholder="日期">
+          <input type="time" id="os-${c.id}" placeholder="开始">
+          <span>~</span>
+          <input type="time" id="oe-${c.id}" placeholder="结束">
+          <input type="text" id="oc-${c.id}" placeholder="或填off关闭" style="width:80px;">
+          <button class="add-override-btn" onclick="addOverride('${c.id}')">+ 临时调整</button>
+        </div>
+      </div>
+      <button class="save-hours-btn" id="sb-${c.id}" onclick="saveHours('${c.id}')" disabled>💾 保存变更</button>
+    </div>`;
+  }
+  document.getElementById('coachHoursList').innerHTML = html;
+}
+
+function onHoursChange(el) {
+  const coachId = el.dataset.coach;
+  document.getElementById('sb-'+coachId).disabled = false;
+}
+
+function toggleOff(cb, coachId, dow) {
+  const row = document.getElementById('hr-'+coachId+'-'+dow);
+  const inputs = row.querySelectorAll('input[type=time]');
+  inputs.forEach(i => i.disabled = cb.checked);
+  document.getElementById('sb-'+coachId).disabled = false;
+}
+
+async function saveHours(coachId) {
+  const coach = coachHoursData.find(c=>c.id===coachId);
+  if (!coach) return;
+  const openHours = {};
+  for (const dow of Object.keys(DAY_NAMES)) {
+    const row = document.getElementById('hr-'+coachId+'-'+dow);
+    const inputs = row.querySelectorAll('input[type=time]');
+    const cb = row.querySelector('input[type=checkbox]');
+    if (cb.checked) { openHours[dow] = {start:'', end:''}; }
+    else { openHours[dow] = {start:inputs[0].value, end:inputs[1].value}; }
+  }
+  await api('PUT', '/api/coaches/'+coachId, {openHours, overrides:coach.overrides||{}});
+  document.getElementById('sb-'+coachId).disabled = true;
+  alert('保存成功！');
+}
+
+function addOverride(coachId) {
+  const date = document.getElementById('od-'+coachId).value;
+  const offVal = document.getElementById('oc-'+coachId).value.trim().toLowerCase();
+  if (!date) { alert('请选择日期'); return; }
+  const coach = coachHoursData.find(c=>c.id===coachId);
+  if (!coach) return;
+  if (!coach.overrides) coach.overrides = {};
+  if (offVal === 'off') coach.overrides[date] = null;
+  else {
+    const s = document.getElementById('os-'+coachId).value;
+    const e = document.getElementById('oe-'+coachId).value;
+    if (!s||!e) { alert('请填写开始和结束时间'); return; }
+    coach.overrides[date] = {start:s, end:e};
+  }
+  renderCoachHours(coachHoursData);
+  document.getElementById('sb-'+coachId).disabled = false;
+}
+
+function removeOverride(coachId, date) {
+  const coach = coachHoursData.find(c=>c.id===coachId);
+  if (!coach || !coach.overrides) return;
+  delete coach.overrides[date];
+  renderCoachHours(coachHoursData);
+  document.getElementById('sb-'+coachId).disabled = false;
+}
+
+// ── 通知设置 ──────────────────────────────────────────
+async function loadTokens() {
+  const tokens = await api('GET', '/api/admin/tokens');
+  if (tokens.error) return;
+  if (!tokens.length) {
+    document.getElementById('tokenList').innerHTML = '<div class="empty-state">暂无管理员，添加一个吧</div>';
+    return;
+  }
+  let html = '';
+  for (const t of tokens) {
+    html += `<div class="token-item">
+      <span class="name">${t.name}</span>
+      <span class="token">${t.token}</span>
+      <button onclick="removeToken('${t.name}')">删除</button>
+    </div>`;
+  }
+  document.getElementById('tokenList').innerHTML = html;
+}
+
+async function addToken() {
+  const name = document.getElementById('newTokenName').value.trim();
+  const token = document.getElementById('newTokenValue').value.trim();
+  if (!name||!token) { alert('名称和Token都不能为空'); return; }
+  await api('POST', '/api/admin/tokens', {name, token});
+  document.getElementById('newTokenName').value = '';
+  document.getElementById('newTokenValue').value = '';
+  loadTokens();
+}
+
+async function removeToken(name) {
+  if (!confirm('确定删除该管理员通知？')) return;
+  await api('DELETE', '/api/admin/tokens/'+encodeURIComponent(name));
+  loadTokens();
+}
+
+// ── 备份 ──────────────────────────────────────────────
+async function runBackup() {
+  const btn = document.getElementById('backupBtn');
+  const log = document.getElementById('backupLog');
+  btn.disabled = true;
+  btn.textContent = '备份中...';
+  log.textContent = '';
+  try {
+    const r = await api('POST', '/api/backup', {});
+    if (r.ok) log.textContent = `✅ ${r.date} 备份成功，共 ${r.count} 条预约`;
+    else log.textContent = `⚠️ ${r.reason || r.error || '备份失败'}`;
+  } catch(e) {
+    log.textContent = '❌ 备份出错：'+e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = '📤 立即备份今日数据';
+}
+
+// ── 显示后台 ──────────────────────────────────────────
+function showAdminApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('adminApp').style.display = 'block';
+  loadDashboard();
+}
+</script>
+</body>
+</html>
