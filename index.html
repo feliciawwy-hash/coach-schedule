@@ -508,6 +508,14 @@
         .weekday-picker button.active { background:#667eea; color:#fff; border-color:transparent; }
         .form-group.row { display:flex; gap:16px; }
         .form-group.row > div { flex:1; }
+        .recur-rule { background:#fff; border:1px solid #e3e8ff; border-radius:10px; padding:12px; margin-bottom:10px; }
+        .rule-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        .rule-wd { display:flex; gap:4px; flex-wrap:wrap; }
+        .wd-btn { width:32px; height:32px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:.85rem; }
+        .wd-btn.active { background:#667eea; color:#fff; border-color:transparent; }
+        .rule-time { display:flex; align-items:center; gap:6px; }
+        .rule-del { margin-left:auto; background:#fee2e2; color:#991b1b; border:none; border-radius:8px; width:32px; height:32px; cursor:pointer; font-size:.9rem; }
+        .btn-add-rule { width:100%; padding:10px; border:1px dashed #667eea; background:#f5f7ff; color:#667eea; border-radius:10px; cursor:pointer; font-size:.9rem; margin-bottom:10px; }
     </style>
 </head>
 <body>
@@ -590,27 +598,13 @@
 
             <div class="recurring-panel" id="recurringPanel" style="display:none;">
                 <h3>🔁 整月循环预约</h3>
-                <p class="hint">选择月份、星期（可多选）与时间段，系统会预约该月内每个对应星期的同时段课程。</p>
+                <p class="hint">可添加多条规则，例如：周一/周三 18:00，周二/周四 17:00。系统会预约该月内每个对应星期的同时段。</p>
                 <div class="form-group">
                     <label>月份</label>
                     <select id="recurMonth"></select>
                 </div>
-                <div class="form-group">
-                    <label>星期（可多选）</label>
-                    <div class="weekday-picker" id="recurWeekdays">
-                        <button type="button" data-dow="1">周一</button>
-                        <button type="button" data-dow="2">周二</button>
-                        <button type="button" data-dow="3">周三</button>
-                        <button type="button" data-dow="4">周四</button>
-                        <button type="button" data-dow="5">周五</button>
-                        <button type="button" data-dow="6">周六</button>
-                        <button type="button" data-dow="0">周日</button>
-                    </div>
-                </div>
-                <div class="form-group row">
-                    <div><label>开始时间</label><select id="recurStart"></select></div>
-                    <div><label>结束时间</label><select id="recurEnd"></select></div>
-                </div>
+                <div id="recurRules"></div>
+                <button type="button" class="btn-add-rule" id="addRuleBtn">+ 添加时间段规则</button>
                 <div class="form-group">
                     <label>约课名 *</label>
                     <input type="text" id="recurName" placeholder="请输入约课名">
@@ -937,25 +931,69 @@
         }
         // ── 整月循环预约 ──
         let recurringMode = false;
-        const selectedDows = new Set();
+        let recurRules = [];
         function pad2(n){ return String(n).padStart(2,'0'); }
         function toMinLocal(t){ if(!t) return 0; const p=t.split(':').map(Number); return p[0]*60+p[1]; }
         function initRecurring(){
             populateRecurMonth();
-            populateRecurTimes();
-            document.querySelectorAll('#recurWeekdays button').forEach(btn=>{
-                btn.addEventListener('click',()=>{
-                    const dow = btn.getAttribute('data-dow');
-                    if(selectedDows.has(dow)){ selectedDows.delete(dow); btn.classList.remove('active'); }
-                    else { selectedDows.add(dow); btn.classList.add('active'); }
-                    updateRecurPreview();
-                });
-            });
-            ['recurMonth','recurStart','recurEnd','recurName'].forEach(id=>{
+            recurRules = [{ dows:new Set(), start:'', end:'' }];
+            renderRecurRules();
+            document.getElementById('addRuleBtn').addEventListener('click', addRecurRule);
+            ['recurMonth','recurName'].forEach(id=>{
                 document.getElementById(id).addEventListener('input', updateRecurPreview);
                 document.getElementById(id).addEventListener('change', updateRecurPreview);
             });
             document.getElementById('recurSubmitBtn').addEventListener('click', submitRecurring);
+        }
+        function addRecurRule(){
+            recurRules.push({ dows:new Set(), start:'', end:'' });
+            renderRecurRules();
+            updateRecurPreview();
+        }
+        function renderRecurRules(){
+            const wrap = document.getElementById('recurRules');
+            wrap.innerHTML = '';
+            const wdDefs = [['0','日'],['1','一'],['2','二'],['3','三'],['4','四'],['5','五'],['6','六']];
+            recurRules.forEach((rule, idx)=>{
+                const div = document.createElement('div');
+                div.className = 'recur-rule';
+                let wd = '';
+                wdDefs.forEach(([v,lbl])=>{
+                    const active = rule.dows.has(v) ? ' active' : '';
+                    wd += `<button type="button" class="wd-btn${active}" data-idx="${idx}" data-dow="${v}">${lbl}</button>`;
+                });
+                div.innerHTML = `
+                    <div class="rule-row">
+                        <div class="rule-wd">${wd}</div>
+                        <div class="rule-time">
+                            <select class="rule-start" data-idx="${idx}"></select><span>~</span><select class="rule-end" data-idx="${idx}"></select>
+                        </div>
+                        <button type="button" class="rule-del" data-idx="${idx}">✕</button>
+                    </div>`;
+                wrap.appendChild(div);
+            });
+            wrap.querySelectorAll('.wd-btn').forEach(btn=>{
+                btn.addEventListener('click',()=>{
+                    const i = +btn.getAttribute('data-idx');
+                    const dow = btn.getAttribute('data-dow');
+                    if(recurRules[i].dows.has(dow)){ recurRules[i].dows.delete(dow); btn.classList.remove('active'); }
+                    else { recurRules[i].dows.add(dow); btn.classList.add('active'); }
+                    updateRecurPreview();
+                });
+            });
+            wrap.querySelectorAll('.rule-start').forEach(sel=>{
+                sel.innerHTML = timeOptionsHtml();
+                sel.value = recurRules[+sel.getAttribute('data-idx')].start;
+                sel.addEventListener('change',()=>{ recurRules[+sel.getAttribute('data-idx')].start = sel.value; updateRecurPreview(); });
+            });
+            wrap.querySelectorAll('.rule-end').forEach(sel=>{
+                sel.innerHTML = timeOptionsHtml();
+                sel.value = recurRules[+sel.getAttribute('data-idx')].end;
+                sel.addEventListener('change',()=>{ recurRules[+sel.getAttribute('data-idx')].end = sel.value; updateRecurPreview(); });
+            });
+            wrap.querySelectorAll('.rule-del').forEach(btn=>{
+                btn.addEventListener('click',()=>{ recurRules.splice(+btn.getAttribute('data-idx'),1); renderRecurRules(); updateRecurPreview(); });
+            });
         }
         function populateRecurMonth(){
             const sel = document.getElementById('recurMonth');
@@ -973,10 +1011,7 @@
             for(let h=7;h<=23;h++){ for(const m of [0,30]){ const v=pad2(h)+':'+pad2(m); o+=`<option value="${v}">${v}</option>`; } }
             return o;
         }
-        function populateRecurTimes(){
-            document.getElementById('recurStart').innerHTML = timeOptionsHtml();
-            document.getElementById('recurEnd').innerHTML = timeOptionsHtml();
-        }
+        // populateRecurTimes removed: time selects are rendered per-rule inside renderRecurRules()
         function setMode(mode){
             recurringMode = (mode==='recur');
             document.getElementById('modeSingle').classList.toggle('active', !recurringMode);
@@ -990,18 +1025,21 @@
             const mv = document.getElementById('recurMonth').value;
             if(!mv) return [];
             const [y,m] = mv.split('-').map(Number);
-            const startMin = toMinLocal(document.getElementById('recurStart').value);
-            const endRaw = document.getElementById('recurEnd').value;
-            const endMin = endRaw ? toMinLocal(endRaw) : 0;
-            const effEnd = (endMin<=startMin) ? startMin+30 : endMin;
             const slots=[];
             const days = new Date(y,m,0).getDate();
             for(let d=1; d<=days; d++){
                 const dt = new Date(y,m-1,d);
-                if(!selectedDows.has(String(dt.getDay()))) continue;
-                for(const t of TIME_SLOTS){
-                    const tm = toMinLocal(t);
-                    if(tm>=startMin && tm<effEnd) slots.push({date: y+'-'+pad2(m)+'-'+pad2(d), time:t});
+                const dow = String(dt.getDay());
+                for(const rule of recurRules){
+                    if(!rule.dows.has(dow) || !rule.start) continue;
+                    const startMin = toMinLocal(rule.start);
+                    const endRaw = rule.end;
+                    const endMin = endRaw ? toMinLocal(endRaw) : 0;
+                    const effEnd = (endMin<=startMin) ? startMin+30 : endMin;
+                    for(const t of TIME_SLOTS){
+                        const tm = toMinLocal(t);
+                        if(tm>=startMin && tm<effEnd) slots.push({date: y+'-'+pad2(m)+'-'+pad2(d), time:t});
+                    }
                 }
             }
             return slots;
@@ -1009,18 +1047,18 @@
         function updateRecurPreview(){
             const pv = document.getElementById('recurPreview');
             const name = document.getElementById('recurName').value.trim();
-            const start = document.getElementById('recurStart').value;
-            const end = document.getElementById('recurEnd').value;
             const btn = document.getElementById('recurSubmitBtn');
-            if(!start){ btn.disabled=true; pv.textContent='请选择开始时间'; pv.className='status-message'; return; }
-            if(selectedDows.size===0){ btn.disabled=true; pv.textContent='请至少选择一个星期'; pv.className='status-message'; return; }
+            if(recurRules.length===0){ btn.disabled=true; pv.textContent='请至少添加一条时间段规则'; pv.className='status-message'; return; }
+            for(const r of recurRules){
+                if(r.dows.size===0){ btn.disabled=true; pv.textContent='每条规则请至少选一个星期'; pv.className='status-message'; return; }
+                if(!r.start){ btn.disabled=true; pv.textContent='每条规则请选择开始时间'; pv.className='status-message'; return; }
+            }
             if(!name){ btn.disabled=true; pv.textContent='请输入约课名'; pv.className='status-message'; return; }
             const slots = buildRecurSlots();
             btn.disabled = slots.length===0;
             if(slots.length===0){ pv.textContent='该范围内没有可预约的时段'; pv.className='status-message'; return; }
             const monthLbl = document.getElementById('recurMonth').selectedOptions[0].text;
-            const range = end && end!==start ? (start+'~'+end) : start;
-            pv.innerHTML = `将预约 <b>${slots.length}</b> 节课（${monthLbl} 所选星期 ${range}）`;
+            pv.innerHTML = `将预约 <b>${slots.length}</b> 节课（${monthLbl}，按 ${recurRules.length} 条规则）`;
             pv.className='status-message';
         }
         async function submitRecurring(){
@@ -1039,8 +1077,8 @@
                 const skipped = (data.skipped||[]).length;
                 showRecurStatus(`✅ 已提交 ${cnt} 节循环课程！\n（微信会收到通知${skipped?`；${skipped} 节因教练未开放已跳过`:''}）`,'success');
                 document.getElementById('recurName').value='';
-                selectedDows.clear();
-                document.querySelectorAll('#recurWeekdays button').forEach(b=>b.classList.remove('active'));
+                recurRules = [{ dows:new Set(), start:'', end:'' }];
+                renderRecurRules();
             }catch(e){ showRecurStatus('❌ '+e.message,'error'); btn.disabled=false; }
         }
         function showRecurStatus(msg,type){
