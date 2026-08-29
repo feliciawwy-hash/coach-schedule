@@ -97,6 +97,17 @@ body { font-family:'Segoe UI',sans-serif; background:#f0f2f5; color:#333; min-he
 .save-hours-btn { margin-top:12px; padding:8px 20px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; }
 .save-hours-btn:disabled { background:#ccc; cursor:not-allowed; }
 
+/* 多时段 */
+.coach-add-bar { display:flex; gap:8px; align-items:center; margin-bottom:16px; background:white; padding:12px 16px; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); }
+.coach-add-bar input { padding:8px 12px; border:1px solid #ddd; border-radius:8px; flex:1; min-width:120px; }
+.coach-add-bar button { padding:8px 20px; background:#667eea; color:white; border:none; border-radius:8px; cursor:pointer; white-space:nowrap; }
+.seg-list { display:flex; flex-direction:column; gap:6px; flex:1; }
+.seg-item { display:flex; align-items:center; gap:6px; }
+.seg-item input[type=time] { padding:6px 8px; border:1px solid #ddd; border-radius:6px; font-size:.85rem; width:110px; }
+.seg-del { cursor:pointer; color:#e53e3e; font-weight:700; padding:0 4px; }
+.add-seg-btn { padding:4px 10px; background:#f0f0f0; border:none; border-radius:6px; cursor:pointer; font-size:.8rem; white-space:nowrap; }
+.add-seg-btn:hover { background:#e0e0e0; }
+
 /* 临时调整 */
 .override-form { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; }
 .override-form input { padding:6px 10px; border:1px solid #ddd; border-radius:6px; font-size:.85rem; }
@@ -354,22 +365,52 @@ async function loadCoachHours() {
   renderCoachHours(coaches);
 }
 
+function normalizeOpenHours(c) {
+  const result = {};
+  for (const dow of Object.keys(DAY_NAMES)) {
+    if (c.openHours && c.openHours[dow]) {
+      const v = c.openHours[dow];
+      if (Array.isArray(v)) result[dow] = v;
+      else if (v && v.start) result[dow] = [{start:v.start, end:v.end}];
+      else result[dow] = [];
+    } else if (c.openStart && c.openEnd) {
+      result[dow] = [{start:c.openStart, end:c.openEnd}];
+    } else {
+      result[dow] = [];
+    }
+  }
+  return result;
+}
+
 function renderCoachHours(coaches) {
-  let html = '';
+  let html = `<div class="coach-add-bar">
+    <input id="newCoachName" placeholder="新教练姓名">
+    <button onclick="addCoach()">+ 新增教练</button>
+  </div>`;
   for (const c of coaches) {
-    const oh = c.openHours || {};
+    const oh = normalizeOpenHours(c);
     html += `<div class="coach-hours-card" id="chc-${c.id}">
       <h3>${c.name}</h3>
       <div class="hours-grid" id="hg-${c.id}">`;
     for (const [dow, lbl] of Object.entries(DAY_NAMES)) {
-      const hours = oh[dow] || {start:'',end:''};
-      html += `
-      <div class="hours-row" id="hr-${c.id}-${dow}">
+      const segs = oh[dow] || [];
+      html += `<div class="hours-row" id="hr-${c.id}-${dow}">
         <span class="day">${lbl}</span>
-        <input type="time" value="${hours.start||''}" data-coach="${c.id}" data-dow="${dow}" data-field="start" onchange="onHoursChange(this)">
-        <span style="color:#999">~</span>
-        <input type="time" value="${hours.end||''}" data-coach="${c.id}" data-dow="${dow}" data-field="end" onchange="onHoursChange(this)">
-        <label><input type="checkbox" ${!hours.start?'checked':''} onchange="toggleOff(this,'${c.id}','${dow}')"> 休息</label>
+        <div class="seg-list" id="sl-${c.id}-${dow}">`;
+      if (segs.length === 0) {
+        html += `<span class="closed">全天休息</span>`;
+      } else {
+        for (let si=0; si<segs.length; si++) {
+          html += `<span class="seg-item">
+            <input type="time" value="${segs[si].start||''}" data-field="start" onchange="markDirty('${c.id}')">
+            <span style="color:#999">~</span>
+            <input type="time" value="${segs[si].end||''}" data-field="end" onchange="markDirty('${c.id}')">
+            <span class="seg-del" onclick="delSeg(this,'${c.id}','${dow}')">×</span>
+          </span>`;
+        }
+      }
+      html += `</div>
+        <button class="add-seg-btn" onclick="addSeg('${c.id}','${dow}')">+ 时段</button>
       </div>`;
     }
     html += `</div>
@@ -384,10 +425,10 @@ function renderCoachHours(coaches) {
     }
     html += `</div>
         <div class="override-form">
-          <input type="date" id="od-${c.id}" placeholder="日期">
-          <input type="time" id="os-${c.id}" placeholder="开始">
+          <input type="date" id="od-${c.id}">
+          <input type="time" id="os-${c.id}">
           <span>~</span>
-          <input type="time" id="oe-${c.id}" placeholder="结束">
+          <input type="time" id="oe-${c.id}">
           <input type="text" id="oc-${c.id}" placeholder="或填off关闭" style="width:80px;">
           <button class="add-override-btn" onclick="addOverride('${c.id}')">+ 临时调整</button>
         </div>
@@ -398,16 +439,44 @@ function renderCoachHours(coaches) {
   document.getElementById('coachHoursList').innerHTML = html;
 }
 
-function onHoursChange(el) {
-  const coachId = el.dataset.coach;
-  document.getElementById('sb-'+coachId).disabled = false;
+function markDirty(coachId) {
+  const btn = document.getElementById('sb-'+coachId);
+  if (btn) btn.disabled = false;
 }
 
-function toggleOff(cb, coachId, dow) {
-  const row = document.getElementById('hr-'+coachId+'-'+dow);
-  const inputs = row.querySelectorAll('input[type=time]');
-  inputs.forEach(i => i.disabled = cb.checked);
-  document.getElementById('sb-'+coachId).disabled = false;
+function addSeg(coachId, dow) {
+  const list = document.getElementById('sl-'+coachId+'-'+dow);
+  const ph = list.querySelector('.closed');
+  if (ph) ph.remove();
+  const item = document.createElement('span');
+  item.className = 'seg-item';
+  item.innerHTML = `<input type="time" data-field="start" onchange="markDirty('${coachId}')">
+    <span style="color:#999">~</span>
+    <input type="time" data-field="end" onchange="markDirty('${coachId}')">
+    <span class="seg-del" onclick="delSeg(this,'${coachId}','${dow}')">×</span>`;
+  list.appendChild(item);
+  markDirty(coachId);
+}
+
+function delSeg(el, coachId, dow) {
+  const item = el.closest('.seg-item');
+  const list = document.getElementById('sl-'+coachId+'-'+dow);
+  if (item) item.remove();
+  if (list && !list.querySelector('.seg-item')) {
+    const ph = document.createElement('span');
+    ph.className = 'closed';
+    ph.textContent = '全天休息';
+    list.appendChild(ph);
+  }
+  markDirty(coachId);
+}
+
+async function addCoach() {
+  const name = document.getElementById('newCoachName').value.trim();
+  if (!name) { alert('请输入教练姓名'); return; }
+  await api('POST', '/api/coaches', {name});
+  document.getElementById('newCoachName').value = '';
+  loadCoachHours();
 }
 
 async function saveHours(coachId) {
@@ -415,15 +484,32 @@ async function saveHours(coachId) {
   if (!coach) return;
   const openHours = {};
   for (const dow of Object.keys(DAY_NAMES)) {
-    const row = document.getElementById('hr-'+coachId+'-'+dow);
-    const inputs = row.querySelectorAll('input[type=time]');
-    const cb = row.querySelector('input[type=checkbox]');
-    if (cb.checked) { openHours[dow] = {start:'', end:''}; }
-    else { openHours[dow] = {start:inputs[0].value, end:inputs[1].value}; }
+    const list = document.getElementById('sl-'+coachId+'-'+dow);
+    const segs = [];
+    list.querySelectorAll('.seg-item').forEach(item => {
+      const s = item.querySelector('input[data-field=start]').value;
+      const e = item.querySelector('input[data-field=end]').value;
+      if (s && e) segs.push({start:s, end:e});
+    });
+    openHours[dow] = segs;
   }
   await api('PUT', '/api/coaches/'+coachId, {openHours, overrides:coach.overrides||{}});
   document.getElementById('sb-'+coachId).disabled = true;
   alert('保存成功！');
+}
+
+function renderOverrideList(coachId) {
+  const coach = coachHoursData.find(c=>c.id===coachId);
+  const el = document.getElementById('ovl-'+coachId);
+  if (!el) return;
+  let html = '';
+  if (coach.overrides) {
+    for (const [date, val] of Object.entries(coach.overrides)) {
+      if (val === null) html += `<div class="override-chip">${date} 全天关闭 <span onclick="removeOverride('${coachId}','${date}')">×</span></div>`;
+      else html += `<div class="override-chip">${date} ${val.start}~${val.end} <span onclick="removeOverride('${coachId}','${date}')">×</span></div>`;
+    }
+  }
+  el.innerHTML = html;
 }
 
 function addOverride(coachId) {
@@ -440,16 +526,16 @@ function addOverride(coachId) {
     if (!s||!e) { alert('请填写开始和结束时间'); return; }
     coach.overrides[date] = {start:s, end:e};
   }
-  renderCoachHours(coachHoursData);
-  document.getElementById('sb-'+coachId).disabled = false;
+  renderOverrideList(coachId);
+  markDirty(coachId);
 }
 
 function removeOverride(coachId, date) {
   const coach = coachHoursData.find(c=>c.id===coachId);
   if (!coach || !coach.overrides) return;
   delete coach.overrides[date];
-  renderCoachHours(coachHoursData);
-  document.getElementById('sb-'+coachId).disabled = false;
+  renderOverrideList(coachId);
+  markDirty(coachId);
 }
 
 // ── 通知设置 ──────────────────────────────────────────
