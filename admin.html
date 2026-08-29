@@ -91,6 +91,7 @@ body { font-family:'Segoe UI',sans-serif; background:#f0f2f5; color:#333; min-he
 .seg-list { display:flex; flex-direction:column; gap:8px; flex:1; min-width:0; }
 .seg-item { display:flex; align-items:center; gap:8px; background:#f7f8fa; padding:5px 10px; border-radius:8px; width:fit-content; max-width:100%; }
 .seg-item input[type=time] { padding:5px 8px; border:1px solid #ddd; border-radius:6px; font-size:.85rem; width:104px; }
+.time-sel { padding:5px 8px; border:1px solid #ddd; border-radius:6px; font-size:.85rem; width:104px; background:#fff; }
 .seg-del { cursor:pointer; color:#e53e3e; font-weight:700; padding:0 4px; font-size:1rem; line-height:1; }
 .add-seg-btn { margin-top:4px; padding:5px 12px; background:#f0f0f0; border:none; border-radius:6px; cursor:pointer; font-size:.8rem; white-space:nowrap; flex-shrink:0; }
 .add-seg-btn:hover { background:#e0e0e0; }
@@ -386,6 +387,17 @@ function normalizeOpenHours(c) {
   return result;
 }
 
+function timeSelectHtml(value, attrs) {
+  let opts = '<option value=""' + (value ? '' : ' selected') + '>--:--</option>';
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      const v = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+      opts += '<option value="' + v + '"' + (value === v ? ' selected' : '') + '>' + v + '</option>';
+    }
+  }
+  return '<select class="time-sel" ' + attrs + '>' + opts + '</select>';
+}
+
 function renderCoachHours(coaches) {
   let html = `<div class="coach-add-bar">
     <input id="newCoachName" placeholder="新教练姓名">
@@ -406,9 +418,9 @@ function renderCoachHours(coaches) {
       } else {
         for (let si=0; si<segs.length; si++) {
           html += `<span class="seg-item">
-            <input type="time" value="${segs[si].start||''}" data-field="start" onchange="markDirty('${c.id}')">
+            ${timeSelectHtml(segs[si].start||'', `data-field="start" onchange="markDirty('${c.id}')"`)}
             <span style="color:#999">~</span>
-            <input type="time" value="${segs[si].end||''}" data-field="end" onchange="markDirty('${c.id}')">
+            ${timeSelectHtml(segs[si].end||'', `data-field="end" onchange="markDirty('${c.id}')"`)}
             <span class="seg-del" onclick="delSeg(this,'${c.id}','${dow}')">×</span>
           </span>`;
         }
@@ -430,9 +442,9 @@ function renderCoachHours(coaches) {
     html += `</div>
         <div class="override-form">
           <input type="date" id="od-${c.id}">
-          <input type="time" id="os-${c.id}">
+          ${timeSelectHtml('', `id="os-${c.id}"`)}
           <span>~</span>
-          <input type="time" id="oe-${c.id}">
+          ${timeSelectHtml('', `id="oe-${c.id}"`)}
           <input type="text" id="oc-${c.id}" placeholder="或填off关闭" style="width:80px;">
           <button class="add-override-btn" onclick="addOverride('${c.id}')">+ 临时调整</button>
         </div>
@@ -454,9 +466,9 @@ function addSeg(coachId, dow) {
   if (ph) ph.remove();
   const item = document.createElement('span');
   item.className = 'seg-item';
-  item.innerHTML = `<input type="time" data-field="start" onchange="markDirty('${coachId}')">
+  item.innerHTML = `${timeSelectHtml('', `data-field="start" onchange="markDirty('${coachId}')"`)}
     <span style="color:#999">~</span>
-    <input type="time" data-field="end" onchange="markDirty('${coachId}')">
+    ${timeSelectHtml('', `data-field="end" onchange="markDirty('${coachId}')"`)}
     <span class="seg-del" onclick="delSeg(this,'${coachId}','${dow}')">×</span>`;
   list.appendChild(item);
   markDirty(coachId);
