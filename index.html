@@ -499,6 +499,15 @@
                 padding: 20px;
             }
         }
+        .mode-toggle { display:flex; gap:10px; margin: 10px 0 4px; }
+        .mode-btn { flex:1; padding:10px; border:1px solid #ddd; background:#fff; border-radius:10px; cursor:pointer; font-size:.95rem; color:#555; }
+        .mode-btn.active { background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; border-color:transparent; }
+        .recurring-panel { background:#fafbff; border:1px solid #e3e8ff; border-radius:12px; padding:20px; }
+        .weekday-picker { display:flex; gap:6px; flex-wrap:wrap; }
+        .weekday-picker button { padding:8px 12px; border:1px solid #ddd; background:#fff; border-radius:8px; cursor:pointer; font-size:.9rem; }
+        .weekday-picker button.active { background:#667eea; color:#fff; border-color:transparent; }
+        .form-group.row { display:flex; gap:16px; }
+        .form-group.row > div { flex:1; }
     </style>
 </head>
 <body>
@@ -525,6 +534,11 @@
                 <label>📅 选择日期：</label>
                 <input type="date" id="dateInput">
                 <span style="color: #666; font-size: 0.9rem;">（默认显示本周）</span>
+            </div>
+
+            <div class="mode-toggle">
+                <button type="button" id="modeSingle" class="mode-btn active" onclick="setMode('single')">单次预约</button>
+                <button type="button" id="modeRecur" class="mode-btn" onclick="setMode('recur')">整月循环预约</button>
             </div>
             
             <div class="legend">
@@ -556,7 +570,7 @@
                 </div>
             </div>
             
-            <div class="booking-form">
+            <div class="booking-form" id="bookingForm">
                 <h3>📝 预约信息</h3>
                 <div class="form-group">
                     <label>约课名 *</label>
@@ -573,6 +587,37 @@
                 </button>
                 <div class="status-message" id="statusMessage"></div>
             </div>
+
+            <div class="recurring-panel" id="recurringPanel" style="display:none;">
+                <h3>🔁 整月循环预约</h3>
+                <p class="hint">选择月份、星期（可多选）与时间段，系统会预约该月内每个对应星期的同时段课程。</p>
+                <div class="form-group">
+                    <label>月份</label>
+                    <select id="recurMonth"></select>
+                </div>
+                <div class="form-group">
+                    <label>星期（可多选）</label>
+                    <div class="weekday-picker" id="recurWeekdays">
+                        <button type="button" data-dow="1">周一</button>
+                        <button type="button" data-dow="2">周二</button>
+                        <button type="button" data-dow="3">周三</button>
+                        <button type="button" data-dow="4">周四</button>
+                        <button type="button" data-dow="5">周五</button>
+                        <button type="button" data-dow="6">周六</button>
+                        <button type="button" data-dow="0">周日</button>
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div><label>开始时间</label><select id="recurStart"></select></div>
+                    <div><label>结束时间</label><select id="recurEnd"></select></div>
+                </div>
+                <div class="form-group">
+                    <label>约课名 *</label>
+                    <input type="text" id="recurName" placeholder="请输入约课名">
+                </div>
+                <div class="status-message" id="recurPreview"></div>
+                <button class="btn-submit" id="recurSubmitBtn" disabled>提交整月预约</button>
+            </div>
         </div>
     </div>
 
@@ -582,7 +627,7 @@
         const API_BASE = 'https://coach-schedule-api.feliciawwy.workers.dev';
 
         const TIME_SLOTS = [
-            '8:00', '8:30', '9:00', '9:30', '10:00', '10:30', '11:00', '11:30',
+            '7:00', '7:30', '8:00', '8:30', '9:00', '9:30', '10:00', '10:30', '11:00', '11:30',
             '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
             '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
             '20:00', '20:30', '21:00', '21:30', '22:00', '22:30'
@@ -843,6 +888,7 @@
 
         function initForm() {
             document.getElementById('submitBtn').addEventListener('click', submitBooking);
+            initRecurring();
         }
 
         async function submitBooking() {
@@ -888,6 +934,119 @@
             if (type === 'success') {
                 setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
             }
+        }
+        // ── 整月循环预约 ──
+        let recurringMode = false;
+        const selectedDows = new Set();
+        function pad2(n){ return String(n).padStart(2,'0'); }
+        function toMinLocal(t){ if(!t) return 0; const p=t.split(':').map(Number); return p[0]*60+p[1]; }
+        function initRecurring(){
+            populateRecurMonth();
+            populateRecurTimes();
+            document.querySelectorAll('#recurWeekdays button').forEach(btn=>{
+                btn.addEventListener('click',()=>{
+                    const dow = btn.getAttribute('data-dow');
+                    if(selectedDows.has(dow)){ selectedDows.delete(dow); btn.classList.remove('active'); }
+                    else { selectedDows.add(dow); btn.classList.add('active'); }
+                    updateRecurPreview();
+                });
+            });
+            ['recurMonth','recurStart','recurEnd','recurName'].forEach(id=>{
+                document.getElementById(id).addEventListener('input', updateRecurPreview);
+                document.getElementById(id).addEventListener('change', updateRecurPreview);
+            });
+            document.getElementById('recurSubmitBtn').addEventListener('click', submitRecurring);
+        }
+        function populateRecurMonth(){
+            const sel = document.getElementById('recurMonth');
+            sel.innerHTML = '';
+            const now = new Date();
+            for(let i=0;i<6;i++){
+                const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+                const val = d.getFullYear()+'-'+pad2(d.getMonth()+1);
+                const lbl = d.getFullYear()+'年'+(d.getMonth()+1)+'月';
+                sel.innerHTML += `<option value="${val}">${lbl}</option>`;
+            }
+        }
+        function timeOptionsHtml(){
+            let o='<option value=""></option>';
+            for(let h=7;h<=23;h++){ for(const m of [0,30]){ const v=pad2(h)+':'+pad2(m); o+=`<option value="${v}">${v}</option>`; } }
+            return o;
+        }
+        function populateRecurTimes(){
+            document.getElementById('recurStart').innerHTML = timeOptionsHtml();
+            document.getElementById('recurEnd').innerHTML = timeOptionsHtml();
+        }
+        function setMode(mode){
+            recurringMode = (mode==='recur');
+            document.getElementById('modeSingle').classList.toggle('active', !recurringMode);
+            document.getElementById('modeRecur').classList.toggle('active', recurringMode);
+            document.getElementById('scheduleContainer').style.display = recurringMode ? 'none' : '';
+            document.getElementById('bookingForm').style.display = recurringMode ? 'none' : '';
+            document.getElementById('recurringPanel').style.display = recurringMode ? '' : 'none';
+            if(recurringMode) updateRecurPreview();
+        }
+        function buildRecurSlots(){
+            const mv = document.getElementById('recurMonth').value;
+            if(!mv) return [];
+            const [y,m] = mv.split('-').map(Number);
+            const startMin = toMinLocal(document.getElementById('recurStart').value);
+            const endRaw = document.getElementById('recurEnd').value;
+            const endMin = endRaw ? toMinLocal(endRaw) : 0;
+            const effEnd = (endMin<=startMin) ? startMin+30 : endMin;
+            const slots=[];
+            const days = new Date(y,m,0).getDate();
+            for(let d=1; d<=days; d++){
+                const dt = new Date(y,m-1,d);
+                if(!selectedDows.has(String(dt.getDay()))) continue;
+                for(const t of TIME_SLOTS){
+                    const tm = toMinLocal(t);
+                    if(tm>=startMin && tm<effEnd) slots.push({date: y+'-'+pad2(m)+'-'+pad2(d), time:t});
+                }
+            }
+            return slots;
+        }
+        function updateRecurPreview(){
+            const pv = document.getElementById('recurPreview');
+            const name = document.getElementById('recurName').value.trim();
+            const start = document.getElementById('recurStart').value;
+            const end = document.getElementById('recurEnd').value;
+            const btn = document.getElementById('recurSubmitBtn');
+            if(!start){ btn.disabled=true; pv.textContent='请选择开始时间'; pv.className='status-message'; return; }
+            if(selectedDows.size===0){ btn.disabled=true; pv.textContent='请至少选择一个星期'; pv.className='status-message'; return; }
+            if(!name){ btn.disabled=true; pv.textContent='请输入约课名'; pv.className='status-message'; return; }
+            const slots = buildRecurSlots();
+            btn.disabled = slots.length===0;
+            if(slots.length===0){ pv.textContent='该范围内没有可预约的时段'; pv.className='status-message'; return; }
+            const monthLbl = document.getElementById('recurMonth').selectedOptions[0].text;
+            const range = end && end!==start ? (start+'~'+end) : start;
+            pv.innerHTML = `将预约 <b>${slots.length}</b> 节课（${monthLbl} 所选星期 ${range}）`;
+            pv.className='status-message';
+        }
+        async function submitRecurring(){
+            const name = document.getElementById('recurName').value.trim();
+            if(!name){ showRecurStatus('请输入约课名','error'); return; }
+            const slots = buildRecurSlots();
+            if(slots.length===0){ showRecurStatus('没有可预约的时段','error'); return; }
+            const btn = document.getElementById('recurSubmitBtn');
+            btn.disabled=true;
+            showRecurStatus('正在提交...','loading');
+            try{
+                const res = await fetch(API_BASE+'/api/book',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({coachId:currentCoachId,name,slots})});
+                const data = await res.json();
+                if(!res.ok) throw new Error(data.error||'提交失败');
+                const cnt = (data.pending?data.pending.length:slots.length);
+                const skipped = (data.skipped||[]).length;
+                showRecurStatus(`✅ 已提交 ${cnt} 节循环课程！\n（微信会收到通知${skipped?`；${skipped} 节因教练未开放已跳过`:''}）`,'success');
+                document.getElementById('recurName').value='';
+                selectedDows.clear();
+                document.querySelectorAll('#recurWeekdays button').forEach(b=>b.classList.remove('active'));
+            }catch(e){ showRecurStatus('❌ '+e.message,'error'); btn.disabled=false; }
+        }
+        function showRecurStatus(msg,type){
+            const el=document.getElementById('recurPreview');
+            el.textContent=msg; el.className='status-message '+(type||''); el.style.display='block';
+            if(type==='success'){ setTimeout(()=>{ el.style.display='none'; }, 5000); }
         }
     </script>
 </body>

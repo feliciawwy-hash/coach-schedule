@@ -139,6 +139,7 @@ body { font-family:'Segoe UI',sans-serif; background:#f0f2f5; color:#333; min-he
 /* 加载动画 */
 .loading { display:inline-block; width:20px; height:20px; border:2px solid #667eea; border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite; }
 @keyframes spin { to{transform:rotate(360deg)} }
+.student-total { font-size:.72rem; font-weight:600; color:#6366f1; background:#eef2ff; padding:1px 8px; border-radius:10px; margin-left:6px; }
 </style>
 </head>
 <body>
@@ -307,7 +308,8 @@ async function loadDashboard() {
   const coaches = await api('GET', `/api/dashboard?date=${date}`);
   if (coaches.error) { alert('加载失败：'+coaches.error); return; }
 
-  const allBookings = coaches.coaches.flatMap(c=>c.bookings);
+  const allBookings = coaches.bookings || [];
+  const nameTotals = coaches.nameTotals || {};
   const pending = allBookings.filter(b=>b.status==='pending');
   const confirmed = allBookings.filter(b=>b.status==='confirmed');
   const cancelled = allBookings.filter(b=>b.status==='cancelled');
@@ -317,13 +319,22 @@ async function loadDashboard() {
   document.getElementById('statConfirmed').textContent = confirmed.length;
   document.getElementById('statCancelled').textContent = cancelled.length;
 
+  // 按教练分组（保留出现顺序）
+  const order = [];
+  const groups = {};
+  for (const bk of allBookings) {
+    const key = bk.coachName || '?';
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(bk);
+  }
+
   let html = '';
-  for (const coach of coaches.coaches) {
-    const bks = coach.bookings;
+  for (const key of order) {
+    const bks = groups[key];
     html += `
     <div class="coach-booking-card">
       <div class="coach-card-header">
-        <span class="coach-name">${coach.name}</span>
+        <span class="coach-name">${key}</span>
         <span class="badge">${bks.length} 条预约</span>
       </div>`;
     if (!bks.length) {
@@ -334,13 +345,15 @@ async function loadDashboard() {
       for (const bk of sorted) {
         const statusLabel = bk.status==='pending'?'待确认':bk.status==='confirmed'?'已确认':'已取消';
         const statusClass = bk.status==='pending'?'status-pending':bk.status==='confirmed'?'status-confirmed':'status-cancelled';
-        const actions = bk.status==='pending'?`
-          <button class="confirm-btn" onclick="confirmBooking('${bk.id}')">✓ 确认</button>
-          <button class="cancel-btn" onclick="cancelBooking('${bk.id}')">✕ 取消</button>`:'';
+        const total = (nameTotals[bk.name]) ? nameTotals[bk.name] : 1;
+        const totalTag = total > 1 ? ` <span class="student-total">共 ${total} 节</span>` : '';
+        const actions = bk.status==='pending'
+          ? `<button class="confirm-btn" onclick="confirmBooking('${bk.id}')">✓ 确认</button><button class="cancel-btn" onclick="cancelBooking('${bk.id}')">✕ 取消</button>`
+          : (bk.status==='confirmed' ? `<button class="cancel-btn" onclick="cancelBooking('${bk.id}')">↩ 退回</button>` : '');
         html += `
         <div class="booking-item">
           <span class="time">${bk.time}</span>
-          <span class="student">${bk.name}</span>
+          <span class="student">${bk.name}${totalTag}</span>
           <span class="status-badge ${statusClass}">${statusLabel}</span>
           <div class="booking-actions">${actions}</div>
         </div>`;
@@ -389,7 +402,7 @@ function normalizeOpenHours(c) {
 
 function timeSelectHtml(value, attrs) {
   let opts = '<option value=""' + (value ? '' : ' selected') + '>--:--</option>';
-  for (let h = 0; h < 24; h++) {
+  for (let h = 7; h <= 23; h++) {
     for (const m of [0, 30]) {
       const v = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
       opts += '<option value="' + v + '"' + (value === v ? ' selected' : '') + '>' + v + '</option>';
@@ -503,8 +516,8 @@ async function saveHours(coachId) {
     const list = document.getElementById('sl-'+coachId+'-'+dow);
     const segs = [];
     list.querySelectorAll('.seg-item').forEach(item => {
-      const s = item.querySelector('input[data-field=start]').value;
-      const e = item.querySelector('input[data-field=end]').value;
+      const s = item.querySelector('[data-field=start]').value;
+      const e = item.querySelector('[data-field=end]').value;
       if (s && e) segs.push({start:s, end:e});
     });
     openHours[dow] = segs;
